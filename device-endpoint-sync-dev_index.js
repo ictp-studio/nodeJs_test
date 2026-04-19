@@ -64,9 +64,10 @@ async function ensureEndpointUpToDate({ endpointArn, pushToken }) {
         },
       })
     );
+    return { endpointArn, updated: true };
   }
 
-  return endpointArn;
+  return { endpointArn, updated: false };
 }
 
 async function writeBackEndpoint({
@@ -148,7 +149,7 @@ async function processRecord(record) {
   // - token did not change
   // - endpoint not explicitly disabled
   if (record.eventName === "MODIFY" && hasRealArn && !tokenChanged && !endpointNeedsRepair) {
-    console.log("Skipping unchanged endpoint record", { deviceId });
+    console.log("Skipped unchanged endpoint record", { deviceId });
     return;
   }
 
@@ -165,14 +166,17 @@ async function processRecord(record) {
     console.log("Created platform endpoint", { deviceId, endpointArn: finalEndpointArn });
   } else {
     try {
-      finalEndpointArn = await ensureEndpointUpToDate({
+      const result = await ensureEndpointUpToDate({
         endpointArn: snsEndpointArn,
         pushToken,
       });
-      console.log("Verified/repaired existing endpoint", {
-        deviceId,
-        endpointArn: finalEndpointArn,
-      });
+      finalEndpointArn = result.endpointArn;
+      if (result.updated) {
+        console.log("Updated endpoint attributes", {
+          deviceId,
+          endpointArn: finalEndpointArn,
+        });
+      }
     } catch (err) {
       // If saved ARN is stale or invalid, fall back to creating a new endpoint
       console.warn("Existing endpoint check failed; creating a new endpoint", {
@@ -189,7 +193,7 @@ async function processRecord(record) {
         deviceId,
       });
 
-      console.log("Created replacement endpoint", {
+      console.log("Created platform endpoint", {
         deviceId,
         endpointArn: finalEndpointArn,
       });
@@ -200,6 +204,12 @@ async function processRecord(record) {
     throw new Error(`Failed to resolve SNS endpoint ARN for deviceId=${deviceId}`);
   }
 
+  // Avoid unnecessary DDB write if values are already correct
+  if (finalEndpointArn === snsEndpointArn && endpointEnabled !== false) {
+    console.log("Skipped unchanged endpoint record", { deviceId });
+    return;
+  }
+
   await writeBackEndpoint({
     deviceId,
     endpointArn: finalEndpointArn,
@@ -207,13 +217,31 @@ async function processRecord(record) {
 }
 
 export const handler = async (event) => {
+  const records = event.Records || [];
   console.log("Received stream batch", {
-    recordCount: event?.Records?.length || 0,
+    recordCount: records.length,
   });
+
+  // Deduplicate by deviceId, keeping only the last record per deviceId
+  const lastRecordByDeviceId = new Map();
+  for (const record of records) {
+    if (record.eventName !== "INSERT" && record.eventName !== "MODIFY") continue;
+    const newImage = record.dynamodb?.NewImage;
+    if (!newImage) continue;
+    const { deviceId } = unmarshall(newImage);
+    if (deviceId) {
+      lastRecordByDeviceId.set(deviceId, record);
+    }
+  }
+
+  const uniqueRecords = [...lastRecordByDeviceId.values()];
+  if (records.length !== uniqueRecords.length) {
+    console.log(`Deduplicated batch from ${records.length} records to ${uniqueRecords.length} deviceIds`);
+  }
 
   const failures = [];
 
-  for (const record of event.Records || []) {
+  for (const record of uniqueRecords) {
     try {
       await processRecord(record);
     } catch (err) {
