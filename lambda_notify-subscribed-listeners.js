@@ -84,8 +84,7 @@ function resolveServerAddress(streamUrl) {
   return "https://your-server-domain";
 }
 
-function resolveStreamUrl(streamUrl, serverAddress, mountName) {
-  if (streamUrl) return streamUrl;
+function resolveStreamUrl(serverAddress, mountName) {
   if (!mountName) return "";
 
   if (serverAddress.endsWith("/") && mountName.startsWith("/")) {
@@ -118,7 +117,7 @@ function buildSnsPayload({ status, prayerName, channelName, mountName, streamUrl
   const prayerSlug = slugify(prayerName);
   const eventId = `evt_${ymd}_${hms}_${channelSlug}_${prayerSlug}_${status}`;
   const serverAddress = resolveServerAddress(streamUrl);
-  const resolvedStreamUrl = resolveStreamUrl(streamUrl, serverAddress, mountName);
+  const resolvedStreamUrl = resolveStreamUrl(serverAddress, mountName);
 
   return {
     default: body,
