@@ -67,8 +67,11 @@ class AppSyncService {
       final errors = body['errors'] as List<dynamic>;
       final messages = errors
           .map((e) => (e as Map<String, dynamic>)['message'] as String? ?? '')
+          .where((m) => m.isNotEmpty)
           .join(', ');
-      throw AppSyncException('GraphQL error(s): $messages');
+      throw AppSyncException(
+        'GraphQL error(s): ${messages.isNotEmpty ? messages : 'unknown error'}',
+      );
     }
 
     final data = body['data'] as Map<String, dynamic>?;
@@ -85,6 +88,10 @@ class AppSyncService {
   }
 
   /// Closes the underlying HTTP client.
+  ///
+  /// Must be called when the service is no longer needed (e.g. in a widget's
+  /// `dispose` or when removing it from a DI container).  After calling this
+  /// method, any in-flight or subsequent requests will throw a [StateError].
   void dispose() => _client.close();
 }
 

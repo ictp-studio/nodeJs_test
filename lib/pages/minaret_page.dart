@@ -122,10 +122,13 @@ class _MinaretPageState extends State<MinaretPage> {
   }
 
   Widget _buildTable() {
+    // Wrap in a single scrollable area: vertical via ListView, horizontal via
+    // SingleChildScrollView so the DataTable can grow in both axes without
+    // nested-scroll conflicts.
     return SingleChildScrollView(
-      // Horizontal scroll handles narrow screens.
-      scrollDirection: Axis.horizontal,
+      scrollDirection: Axis.vertical,
       child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
         child: DataTable(
           columns: _columns.values
               .map((label) => DataColumn(label: Text(label)))
